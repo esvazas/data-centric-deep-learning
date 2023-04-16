@@ -133,6 +133,7 @@ class TrainIdentifyReview(FlowSpec):
 
     for train_index, test_index in kf.split(X):
       probs_ = None
+
       # ===============================================
       # FILL ME OUT
       # 
@@ -168,6 +169,41 @@ class TrainIdentifyReview(FlowSpec):
       # --
       # probs_: np.array[float] (shape: |test set|)
       # ===============================================
+
+      X_train = torch.Tensor(X[train_index])
+      y_train = torch.Tensor(y[train_index])
+      X_test = torch.Tensor(X[test_index])
+      y_test = torch.tensor(y[test_index])  
+      train_dataset = TensorDataset(X_train, y_train)
+      test_dataset = TensorDataset(X_test, y_test)
+      
+      # Split up the datasets 
+      train_size = int(len(train_dataset) * 0.8) 
+      val_size = len(train_dataset) - train_size 
+      train_dataset, val_dataset = torch.utils.data.random_split(train_dataset, [train_size, val_size])
+
+      dm = ReviewDataModule(self.config)
+      dm.train_dataset = train_dataset
+      dm.dev_dataset = val_dataset
+      dm.test_dataset = test_dataset    
+
+      #model class
+      system = SentimentClassifierSystem(
+        self.config
+        )
+      trainer = Trainer(
+        max_epochs = self.config.train.optimizer.max_epochs
+        )
+      trainer.fit(system, dm)            
+      trainer.test(system, dm, ckpt_path = 'best')
+
+      # predict
+      results = system.test_results
+
+      logits = trainer.predict(system,dm.test_dataloader())
+      logits = torch.cat(logits)
+      probs_ = torch.from_numpy(logits.numpy()).float().flatten()
+
       assert probs_ is not None, "`probs_` is not defined."
       probs[test_index] = probs_
 
@@ -196,8 +232,13 @@ class TrainIdentifyReview(FlowSpec):
     prob = np.stack([1 - prob, prob]).T
   
     # rank label indices by issues
-    ranked_label_issues = None
-    
+    #ranked_label_issues = None
+    ranked_label_issues = find_label_issues(
+      labels=self.all_df.label.values,
+      pred_probs=prob,
+      return_indices_ranked_by='self_confidence'
+      )
+
     # =============================
     # FILL ME OUT
     # 
@@ -294,6 +335,10 @@ class TrainIdentifyReview(FlowSpec):
     dm = ReviewDataModule(self.config)
     train_size = len(dm.train_dataset)
     dev_size = len(dm.dev_dataset)
+
+    dm.train_dataset.data = self.all_df[:train_size]
+    dm.dev_dataset.data = self.all_df[train_size:train_size+dev_size]
+    dm.test_dataset.data = self.all_df[train_size+dev_size:]
 
     # ====================================
     # FILL ME OUT

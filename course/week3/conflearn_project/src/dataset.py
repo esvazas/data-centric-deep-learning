@@ -21,6 +21,7 @@ class ProductReviewEmbeddings(Dataset):
 
   def __init__(self, split='train'):
     super().__init__()
+    print(join(DATA_DIR, f'{split}.csv'))
     self.data = pd.read_csv(join(DATA_DIR, f'{split}.csv'))
     self.embedding = torch.load(join(DATA_DIR, f'{split}.pt'))
     self.split = split
